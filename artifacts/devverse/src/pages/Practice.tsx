@@ -278,13 +278,17 @@ function StartPracticeModal({
         return;
       }
 
-      // 1b. Ensure the owner is a member — idempotent upsert guards against
-      // SECURITY DEFINER ownership drift on the handle_new_project trigger.
-      const { error: memberError } = await supabase
-        .from('project_members')
-        .upsert({ project_id: project.id, user_id: user.id, role: 'owner' }, { onConflict: 'project_id,user_id' });
-      if (memberError) {
-        setError(memberError.message);
+      // 1b. Call the api-server (service role key) to insert the owner member row
+      // server-side, bypassing RLS. Idempotent — safe if trigger also ran.
+      const { data: { session } } = await supabase.auth.getSession();
+      const initRes = await fetch('/api/init-project-member', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ project_id: project.id, user_id: user.id }),
+      });
+      if (!initRes.ok) {
+        const err = await initRes.json().catch(() => ({ error: 'Failed to initialize project member' }));
+        setError(err.error || 'Failed to initialize project member');
         setLoading(false);
         return;
       }

@@ -24,3 +24,4 @@ timeoutMs = 20000
 [userenv.shared]
 VITE_SUPABASE_URL = "https://tabrztgnzhiwsoeqfokr.supabase.co"
 VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhYnJ6dGduemhpd3NvZXFmb2tyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNzczODMsImV4cCI6MjA5ODc1MzM4M30.uPAQC4QWksU906Ijq-xmWXZctzQBtQD1B4lN4MRnN0I"
+VITE_API_URL = "https://5e4ba91d-cdae-4027-af97-ff1221db775b-00-9rdy9cxiikdk.pike.replit.dev"

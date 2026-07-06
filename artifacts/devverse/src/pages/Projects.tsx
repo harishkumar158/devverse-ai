@@ -138,13 +138,22 @@ function CreateProjectModal({ onClose, onCreated }: { onClose: () => void; onCre
 
     const projectId = data.id;
 
-    // Ensure the owner is a member — the AFTER INSERT trigger does this automatically,
-    // but if the trigger's SECURITY DEFINER ownership has drifted away from the postgres
-    // superuser, RLS will block it. Upsert here is idempotent either way.
-    const { error: memberError } = await supabase
-      .from('project_members')
-      .upsert({ project_id: projectId, user_id: user.id, role: 'owner' }, { onConflict: 'project_id,user_id' });
-    if (memberError) { setError(memberError.message); setLoading(false); return; }
+    // The handle_new_project trigger should insert the owner row, but it fails
+    // when its SECURITY DEFINER function ownership has drifted to a non-superuser.
+    // Call the api-server (which holds the service role key) to insert the member
+    // row server-side, bypassing RLS entirely. Idempotent — safe if trigger also ran.
+    const { data: { session } } = await supabase.auth.getSession();
+    const initRes = await fetch('/api/init-project-member', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ project_id: projectId, user_id: user.id }),
+    });
+    if (!initRes.ok) {
+      const err = await initRes.json().catch(() => ({ error: 'Failed to initialize project member' }));
+      setError(err.error || 'Failed to initialize project member');
+      setLoading(false);
+      return;
+    }
 
     // Create default files
     await supabase.from('files').insert([
@@ -190,12 +199,21 @@ function JoinProjectModal({ onClose, onJoined }: { onClose: () => void; onJoined
     if (!user || !code.trim()) return;
     setLoading(true);
     setError(null);
-    const { data: project } = await supabase
-      .from('projects')
-      .select('id')
-      .eq('invite_code', code.trim().toLowerCase())
-      .maybeSingle();
-    if (!project) { setError('Invalid invite code'); setLoading(false); return; }
+
+    // projects_select_member RLS hides projects from non-members, so a direct
+    // Supabase SELECT by invite_code always returns null. Use the api-server
+    // (service role key) to look up the project, bypassing RLS.
+    const { data: { session } } = await supabase.auth.getSession();
+    const lookupRes = await fetch(`/api/project-by-invite/${encodeURIComponent(code.trim())}`, {
+      headers: { 'Authorization': `Bearer ${session?.access_token}` },
+    });
+    if (!lookupRes.ok) {
+      const err = await lookupRes.json().catch(() => ({ error: 'Invalid invite code' }));
+      setError(err.error || 'Invalid invite code');
+      setLoading(false);
+      return;
+    }
+    const { project } = await lookupRes.json();
 
     const { error: memberError } = await supabase
       .from('project_members')
