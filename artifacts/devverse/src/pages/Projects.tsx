@@ -136,8 +136,17 @@ function CreateProjectModal({ onClose, onCreated }: { onClose: () => void; onCre
       .single();
     if (error) { setError(error.message); setLoading(false); return; }
 
-    // Create default files
     const projectId = data.id;
+
+    // Ensure the owner is a member — the AFTER INSERT trigger does this automatically,
+    // but if the trigger's SECURITY DEFINER ownership has drifted away from the postgres
+    // superuser, RLS will block it. Upsert here is idempotent either way.
+    const { error: memberError } = await supabase
+      .from('project_members')
+      .upsert({ project_id: projectId, user_id: user.id, role: 'owner' }, { onConflict: 'project_id,user_id' });
+    if (memberError) { setError(memberError.message); setLoading(false); return; }
+
+    // Create default files
     await supabase.from('files').insert([
       { project_id: projectId, name: 'index.html', path: 'index.html', type: 'file', language: 'html', content: '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>My Project</title>\n  <link rel="stylesheet" href="style.css">\n</head>\n<body>\n  <div class="container">\n    <h1>Hello, DevVerse!</h1>\n    <p>Start coding together.</p>\n  </div>\n  <script src="script.js"></script>\n</body>\n</html>' },
       { project_id: projectId, name: 'style.css', path: 'style.css', type: 'file', language: 'css', content: '* { margin: 0; padding: 0; box-sizing: border-box; }\nbody { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #667eea, #764ba2); color: white; }\n.container { text-align: center; padding: 2rem; }\nh1 { font-size: 2.5rem; margin-bottom: 0.5rem; }\np { opacity: 0.8; }' },

@@ -278,6 +278,17 @@ function StartPracticeModal({
         return;
       }
 
+      // 1b. Ensure the owner is a member — idempotent upsert guards against
+      // SECURITY DEFINER ownership drift on the handle_new_project trigger.
+      const { error: memberError } = await supabase
+        .from('project_members')
+        .upsert({ project_id: project.id, user_id: user.id, role: 'owner' }, { onConflict: 'project_id,user_id' });
+      if (memberError) {
+        setError(memberError.message);
+        setLoading(false);
+        return;
+      }
+
       // 2. Copy template files into the project
       const { data: templateFiles } = await supabase
         .from('practice_template_files')
