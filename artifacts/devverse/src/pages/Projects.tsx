@@ -215,12 +215,15 @@ function JoinProjectModal({ onClose, onJoined }: { onClose: () => void; onJoined
     }
     const { project } = await lookupRes.json();
 
-    const { error: memberError } = await supabase
-      .from('project_members')
-      .insert({ project_id: project.id, user_id: user.id, role: 'developer' });
-    if (memberError) {
-      if (memberError.code === '23505') setError('You are already a member of this project');
-      else setError(memberError.message);
+    // members_insert_admin RLS blocks direct insert for non-owners; use api-server (service role)
+    const joinRes = await fetch('/api/join-project', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ project_id: project.id }),
+    });
+    if (!joinRes.ok) {
+      const err = await joinRes.json().catch(() => ({ error: 'Failed to join project' }));
+      setError(err.error || 'Failed to join project');
       setLoading(false);
       return;
     }

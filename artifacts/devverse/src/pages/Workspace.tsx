@@ -57,8 +57,21 @@ export default function Workspace({ projectId, onBack, onOpenManage }: Workspace
         .select('*, profile:profiles(*)')
         .eq('project_id', projectId);
       setMembers(memberData || []);
-      const myMember = (memberData || []).find((m) => m.user_id === user?.id);
-      setMyRole(myMember?.role || 'viewer');
+
+      // Fetch role via api-server (service role) so members_select_member RLS
+      // cannot return empty rows and leave the editor stuck in read-only mode.
+      const { data: { session } } = await supabase.auth.getSession();
+      const roleRes = await fetch(`/api/my-role/${projectId}`, {
+        headers: { 'Authorization': `Bearer ${session?.access_token}` },
+      });
+      if (roleRes.ok) {
+        const { role } = await roleRes.json();
+        setMyRole(role || 'viewer');
+      } else {
+        // Fallback: try member data loaded above
+        const myMember = (memberData || []).find((m) => m.user_id === user?.id);
+        setMyRole(myMember?.role || 'viewer');
+      }
 
       setLoading(false);
     })();

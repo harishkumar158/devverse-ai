@@ -93,4 +93,63 @@ router.get("/project-by-invite/:code", async (req, res) => {
   res.json({ project });
 });
 
+// Join a project as developer (service role bypasses members_insert_admin RLS)
+router.post("/join-project", async (req, res) => {
+  const { project_id } = req.body as { project_id?: string };
+  if (!project_id) {
+    res.status(400).json({ error: "project_id is required" });
+    return;
+  }
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing auth token" });
+    return;
+  }
+  const userToken = authHeader.slice(7);
+  const { data: userResult, error: userError } = await adminSupabase.auth.getUser(userToken);
+  if (userError || !userResult.user) {
+    res.status(401).json({ error: "Invalid auth token" });
+    return;
+  }
+  const user_id = userResult.user.id;
+
+  const { error: memberError } = await adminSupabase
+    .from("project_members")
+    .upsert(
+      { project_id, user_id, role: "developer" },
+      { onConflict: "project_id,user_id", ignoreDuplicates: true }
+    );
+
+  if (memberError) {
+    res.status(500).json({ error: memberError.message });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+// Get current user's role in a project (service role bypasses members_select_member RLS)
+router.get("/my-role/:projectId", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing auth token" });
+    return;
+  }
+  const userToken = authHeader.slice(7);
+  const { data: userResult, error: userError } = await adminSupabase.auth.getUser(userToken);
+  if (userError || !userResult.user) {
+    res.status(401).json({ error: "Invalid auth token" });
+    return;
+  }
+
+  const { data: member, error } = await adminSupabase
+    .from("project_members")
+    .select("role")
+    .eq("project_id", req.params.projectId)
+    .eq("user_id", userResult.user.id)
+    .maybeSingle();
+
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json({ role: member?.role ?? null });
+});
+
 export default router;
